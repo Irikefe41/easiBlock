@@ -4,8 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon app.js"
+    "dev": "nodemon app.js",
+    "test": "mocha 'test/**/*.test.js'",
+    "start": "node app.js",
+    "start:pm2": "pm2 start ecosystem.config.js",
+    "stop:pm2": "pm2 stop ecosystem.config.js",
+    "restart:pm2": "pm2 restart ecosystem.config.js",
+    "logs:pm2": "pm2 logs",
+    "delete:pm2": "pm2 delete ecosystem.config.js"
   },
   "keywords": [],
   "author": "",
@@ -13,7 +19,9 @@
   "dependencies": {
     "@noble/secp256k1": "^1.7.1",
     "@raydium-io/raydium-sdk": "^1.3.1-beta.57",
+    "@solana/spl-token": "^0.4.8",
     "@solana/web3.js": "^1.95.3",
+    "axios": "^1.7.7",
     "bs58": "^6.0.0",
     "dotenv": "^16.4.5",
     "ethers": "^6.13.2",

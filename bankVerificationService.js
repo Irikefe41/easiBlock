@@ -1,16 +1,22 @@
 const axios = require('axios');
 const logger = require('./logger');
 
+require('dotenv').config()
+
 class BankVerificationService {
   constructor() {
     this.apiKey = process.env.PAYSTACK_SECRET_KEY;
     this.baseUrl = 'https://api.paystack.co';
     this.bankList = [];
     this.lastFetchTime = null;
+    this.isTestMode = process.env.NODE_ENV !== 'production';
   }
 
   async initializeBankList() {
-    if (this.bankList.length === 0 || this.isCacheExpired()) {
+    if (this.isTestMode) {
+      this.bankList = this.getMockBankList();
+      logger.info('Mock bank list initialized');
+    } else if (this.bankList.length === 0 || this.isCacheExpired()) {
       try {
         const response = await axios.get(`${this.baseUrl}/bank`, {
           headers: { Authorization: `Bearer ${this.apiKey}` }
@@ -25,8 +31,15 @@ class BankVerificationService {
     }
   }
 
+  getMockBankList() {
+    return [
+      { id: 1, name: 'Mock Bank A', code: 'MBA' },
+      { id: 2, name: 'Mock Bank B', code: 'MBB' },
+      { id: 3, name: 'Mock Bank C', code: 'MBC' },
+    ];
+  }
+
   isCacheExpired() {
-    // Refresh cache every 24 hours
     return !this.lastFetchTime || (Date.now() - this.lastFetchTime > 24 * 60 * 60 * 1000);
   }
 
@@ -41,6 +54,10 @@ class BankVerificationService {
   }
 
   async verifyAccount(accountNumber, bankCode) {
+    if (this.isTestMode) {
+      return this.mockVerifyAccount(accountNumber, bankCode);
+    }
+
     try {
       const response = await axios.get(
         `${this.baseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
@@ -55,23 +72,33 @@ class BankVerificationService {
       };
     } catch (error) {
       this.handleAxiosError(error, 'Error verifying bank account');
-      if (error.response && error.response.status === 422) {
-        throw new Error('Invalid account details');
-      }
       throw new Error('Unable to verify bank account');
+    }
+  }
+
+  mockVerifyAccount(accountNumber, bankCode) {
+    const mockAccounts = {
+      '0123456789': { accountName: 'John Doe', bankId: 'MBA' },
+      '9876543210': { accountName: 'Jane Smith', bankId: 'MBB' },
+    };
+
+    if (mockAccounts[accountNumber] && mockAccounts[accountNumber].bankId === bankCode) {
+      return {
+        accountName: mockAccounts[accountNumber].accountName,
+        accountNumber: accountNumber,
+        bankId: mockAccounts[accountNumber].bankId
+      };
+    } else {
+      throw new Error('Invalid account details');
     }
   }
 
   handleAxiosError(error, message) {
     if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
       logger.error(`${message}: ${error.response.status} - ${error.response.data.message || JSON.stringify(error.response.data)}`);
     } else if (error.request) {
-      // The request was made but no response was received
       logger.error(`${message}: No response received`);
     } else {
-      // Something happened in setting up the request that triggered an Error
       logger.error(`${message}: ${error.message}`);
     }
   }

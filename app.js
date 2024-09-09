@@ -4,6 +4,8 @@ const UnifiedWalletService = require('./unifiedWalletService');
 const TransactionValidationService = require('./transactionValidationService');
 const logger = require('./logger');
 
+require('dotenv').config();
+
 const bot = new Telegraf(process.env.easi_BOT_TOKEN);
 
 // Use session to store user data
@@ -65,10 +67,7 @@ bot.catch(errorHandler);
 // Use the handler for all callback queries
 bot.on('callback_query', handleCallbackQuery);
 
-
-
 // Initialize bank list when the bot starts
-
 bot.use(async (ctx, next) => {
     if (!ctx.session) {
       ctx.session = {};
@@ -78,7 +77,7 @@ bot.use(async (ctx, next) => {
       ctx.session.banksInitialized = true;
     }
     return next();
-  });
+});
 
 bot.command('start', async (ctx) => {
     const description = "Welcome to the easiBlock Bot! This bot allows you to send cryptocurrencies from multiple blockchains and instantly receive Fiat in your Bank Account.\n\nSupported chains: Ethereum, BSC, Solana, Tron";
@@ -210,11 +209,11 @@ const sendCryptoScene = new Scenes.WizardScene(
         
         // Create an inline keyboard for copying the address
         const copyAddressMarkup = Markup.inlineKeyboard([
-            Markup.button.callback('📋 Copy Address', `copy_${address}`)
+            Markup.button.callback('📋 Proceed', `copy_${address}`)
         ]);
 
         await ctx.replyWithMarkdown(
-            `Great! Please send your ${ctx.session.chain} to this address:\n` +
+            `Great! Please send your ${ctx.session.chain} Token to this address:\n` +
             `\`${address}\`\n\n` +
             `Memo (important):\n\`${memo}\`\n\n` +
             `*⚠️ IMPORTANT: After sending, please enter the transaction hash:*`,
@@ -223,21 +222,162 @@ const sendCryptoScene = new Scenes.WizardScene(
         return ctx.wizard.next();
     },
     async (ctx) => {
-        if (!ctx.message || !ctx.message.text) {
-            await ctx.reply('Please enter a valid transaction hash.');
-            return;
+        try {
+            if (!ctx.message || !ctx.message.text) {
+                await ctx.reply('Please enter a valid transaction hash.');
+                return;
+            }
+            
+            const extractedData = TransactionValidationService.extractTransactionHash(ctx.message.text);
+
+            if (!extractedData) {
+                await ctx.reply('Unable to extract a valid transaction hash. Here\'s some guidance on transaction hashes:');
+                await ctx.reply(TransactionValidationService.getTransactionHashGuidance());
+                await ctx.reply('Please try again with a valid transaction hash or URL.');
+                return;
+            }
+
+            const { hash, chain } = extractedData;
+
+            // Validate that the extracted chain matches the session chain
+            if (chain !== ctx.session.chain) {
+                await ctx.reply(`The provided transaction hash is for ${chain}, but you selected ${ctx.session.chain}. Please provide a transaction hash for ${ctx.session.chain}.`);
+                return;
+            }
+
+            // Get the expected deposit address
+            const expectedAddress = await UnifiedWalletService.getDepositAddress(ctx.from.id, chain);
+
+            // Perform detailed transaction validation
+            const validationResult = await TransactionValidationService.validateTransaction(hash, chain, expectedAddress.address);
+
+            if (!validationResult.isValid) {
+                await ctx.reply(`Transaction validation failed: ${validationResult.error}`);
+                return;
+            }
+
+            // Store transaction details
+            if (!ctx.session.transactions) {
+                ctx.session.transactions = {};
+            }
+
+            ctx.session.transactions[hash] = {
+                chain: validationResult.chain,
+                type: validationResult.type,
+                amount: validationResult.amount,
+                status: validationResult.status,
+                from: validationResult.from,
+                to: validationResult.to,
+                tokenAddress: validationResult.tokenAddress,
+                timestamp: Date.now()
+            };
+
+            // Prepare response message
+            let responseMessage = `Thank you, ${ctx.session.verifiedName}. We have received your transaction:\n\n`;
+            responseMessage += `Type: ${validationResult.type === 'native' ? 'Native token' : 'Token'} transfer\n`;
+            responseMessage += `Amount: ${validationResult.amount} ${validationResult.type === 'native' ? validationResult.chain.toUpperCase() : 'tokens'}\n`;
+            responseMessage += `Status: ${validationResult.status}\n`;
+            responseMessage += `From: ${validationResult.from}\n`;
+            responseMessage += `To: ${validationResult.to}\n`;
+
+            if (validationResult.type === 'token') {
+                responseMessage += `Token Address: ${validationResult.tokenAddress}\n`;
+            }
+
+            responseMessage += `\nCurrent status: ${validationResult.status}. You will receive a confirmation in your bank account (${ctx.session.accountNumber}) once the transaction is fully processed.`;
+
+            await ctx.reply(responseMessage);
+
+            // Log transaction details
+            logger.info('Transaction details stored', { 
+                userId: ctx.from.id, 
+                hash: hash, 
+                ...ctx.session.transactions[hash]
+            });
+
+            await generateMainMenu(ctx);
+            return ctx.scene.leave();
+        } catch (error) {
+            logger.error('Error in transaction handler', {
+                userId: ctx.from?.id,
+                error: error.message,
+                stack: error.stack
+            });
+            await ctx.reply('An unexpected error occurred while processing your transaction. Our team has been notified. Please try again later or contact support.');
+            await generateMainMenu(ctx);
+            return ctx.scene.leave();
         }
-        ctx.session.txHash = ctx.message.text;
-        await ctx.reply(`Thank you, ${ctx.session.verifiedName}. We are processing your transaction. You will receive a confirmation in your bank account (${ctx.session.accountNumber}) soon.`);
-        // Here you would typically start a background process to monitor the transaction
-        // and initiate the fiat transfer once confirmed
-        logger.info('Transaction initiated', { userId: ctx.from.id, txHash: ctx.session.txHash, chain: ctx.session.chain });
+    }
+);
+
+// New scene for detailed transaction status checking
+const checkTransactionScene = new Scenes.WizardScene(
+    'CHECK_TRANSACTION',
+    async (ctx) => {
+        await ctx.reply('Please enter the transaction hash or the full transaction URL:');
+        return ctx.wizard.next();
+    },
+    async (ctx) => {
+        try {
+            if (!ctx.message || !ctx.message.text) {
+                await ctx.reply('Please enter a valid transaction hash or URL.');
+                return;
+            }
+            
+            const extractedData = TransactionValidationService.extractTransactionHash(ctx.message.text);
+            
+            if (!extractedData) {
+                await ctx.reply('Unable to extract a valid transaction hash. Here\'s some guidance on transaction hashes:');
+                await ctx.reply(TransactionValidationService.getTransactionHashGuidance());
+                await ctx.reply('Please try again with a valid transaction hash or URL.');
+                return;
+            }
+            
+            const { hash, chain } = extractedData;
+            
+            // Get the expected deposit address
+            const expectedAddress = await UnifiedWalletService.getDepositAddress(ctx.from.id, chain);
+
+            // Perform detailed transaction validation
+            const validationResult = await TransactionValidationService.validateTransaction(hash, chain, expectedAddress.address);
+            
+            if (validationResult.isValid) {
+                let message = `Transaction Status:\n\n` +
+                              `Hash: ${hash}\n` +
+                              `Chain: ${chain}\n` +
+                              `Type: ${validationResult.type === 'native' ? 'Native token' : 'Token'} transfer\n` +
+                              `Amount: ${validationResult.amount} ${validationResult.type === 'native' ? chain.toUpperCase() : 'tokens'}\n` +
+                              `Status: ${validationResult.status}\n` +
+                              `From: ${validationResult.from}\n` +
+                              `To: ${validationResult.to}\n`;
+                
+                if (validationResult.type === 'token') {
+                    message += `Token Address: ${validationResult.tokenAddress}\n`;
+                }
+                
+                // If we have stored transaction details, include them
+                const storedTransaction = ctx.session.transactions && ctx.session.transactions[hash];
+                if (storedTransaction) {
+                    message += `\nStored Transaction Details:\n` +
+                               `Account Name: ${ctx.session.verifiedName}\n` +
+                               `Account Number: ${ctx.session.accountNumber}\n`;
+                }
+                
+                await ctx.reply(message);
+            } else {
+                await ctx.reply(`Transaction check failed: ${validationResult.error}`);
+            }
+        } catch (error) {
+            logger.error('Error validating transaction:', error);
+            await ctx.reply('An error occurred while validating the transaction. Please try again later or contact support.');
+        }
+        
         await generateMainMenu(ctx);
         return ctx.scene.leave();
     }
 );
 
-const stage = new Scenes.Stage([sendCryptoScene]);
+const stage = new Scenes.Stage([sendCryptoScene, checkTransactionScene]);
 bot.use(stage.middleware());
 
 bot.action('send_crypto', async (ctx) => {
@@ -252,9 +392,9 @@ bot.action('send_crypto', async (ctx) => {
 
 bot.action('tx_status', async (ctx) => {
     try {
-        await ctx.reply('Please enter your transaction hash:');
+        await ctx.scene.enter('CHECK_TRANSACTION');
     } catch (error) {
-        logger.error('Error in tx_status action', { error: error.message, userId: ctx.from.id });
+        logger.error('Error entering check transaction scene', { error: error.message, userId: ctx.from.id });
         await ctx.reply('An error occurred. Please try again.');
         await generateMainMenu(ctx);
     }
@@ -272,23 +412,45 @@ bot.action('help', async (ctx) => {
 
 // Handle text inputs for transaction status checks
 bot.on('text', async (ctx) => {
-    if (ctx.message.text.startsWith('0x') || ctx.message.text.length === 64) {  // Simple check for tx hash
+    const extractedData = TransactionValidationService.extractTransactionHash(ctx.message.text);
+    
+    if (extractedData) {
+        const { hash, chain } = extractedData;
         try {
-            const isValid = await TransactionValidationService.validateTransaction(ctx.message.text, 'unknown');
-            if (isValid) {
-                await ctx.reply('Transaction is valid and being processed. You will receive your fiat transfer soon.');
+            const validationResult = await TransactionValidationService.validateTransaction(hash, chain);
+
+            let transactionDetails = ctx.session.transactions && ctx.session.transactions[hash];
+
+            if (validationResult.isValid) {
+                let message = `Transaction Status:\n\n` +
+                              `Hash: ${hash}\n` +
+                              `Chain: ${chain}\n` +
+                              `Status: ${validationResult.status}\n`;
+                
+                // if (validationResult.confirmations !== undefined) {
+                //     message += `Confirmations: ${validationResult.confirmations}\n`;
+                // }
+
+                if (transactionDetails) {
+                    message += `\nAccount Name: ${transactionDetails.accountName}\n` +
+                               `Account Number: ${transactionDetails.accountNumber}\n`;
+                    
+                    // Update stored transaction status
+                    transactionDetails.status = validationResult.status;
+                }
+                
+                await ctx.reply(message);
             } else {
-                await ctx.reply('Transaction is not yet confirmed. Please check back later.');
+                await ctx.reply(`Transaction check failed: ${validationResult.error}`);
             }
         } catch (error) {
-            logger.error('Transaction validation error', { error: error.message, txHash: ctx.message.text });
+            logger.error('Transaction validation error', { error: error.message, hash: hash, chain: chain });
             await ctx.reply('Error validating transaction. Please try again or contact support.');
         }
-        await generateMainMenu(ctx);
     } else {
-        await ctx.reply('Sorry, I did not understand that. Please use the menu options or enter a valid transaction hash.');
-        await generateMainMenu(ctx);
+        await ctx.reply('Sorry, I did not understand that. Please use the menu options or enter a valid transaction hash or URL.');
     }
+    await generateMainMenu(ctx);
 });
 
 // Action handlers for menus
