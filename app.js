@@ -133,47 +133,47 @@ bot.action('help', async (ctx) => {
 });
 
 // Handle text inputs for transaction status checks
-bot.on('text', async (ctx) => {
-    const extractedData = TransactionValidationService.extractTransactionHash(ctx.message.text);
+// bot.on('text', async (ctx) => {
+//     const extractedData = TransactionValidationService.extractTransactionHash(ctx.message.text);
     
-    if (extractedData) {
-        const { hash, chain } = extractedData;
-        try {
-            const validationResult = await TransactionValidationService.validateTransaction(hash, chain);
+//     if (extractedData) {
+//         const { hash, chain } = extractedData;
+//         try {
+//             const validationResult = await TransactionValidationService.validateTransaction(hash, chain);
 
-            let transactionDetails = ctx.session.transactions && ctx.session.transactions[hash];
+//             let transactionDetails = ctx.session.transactions && ctx.session.transactions[hash];
 
-            if (validationResult.isValid) {
-                let message = `Transaction Status:\n\n` +
-                              `Hash: ${hash}\n` +
-                              `Chain: ${chain}\n` +
-                              `Status: ${validationResult.status}\n`;
+//             if (validationResult.isValid) {
+//                 let message = `Transaction Status:\n\n` +
+//                               `Hash: ${hash}\n` +
+//                               `Chain: ${chain}\n` +
+//                               `Status: ${validationResult.status}\n`;
                 
-                // if (validationResult.confirmations !== undefined) {
-                //     message += `Confirmations: ${validationResult.confirmations}\n`;
-                // }
+//                 // if (validationResult.confirmations !== undefined) {
+//                 //     message += `Confirmations: ${validationResult.confirmations}\n`;
+//                 // }
 
-                if (transactionDetails) {
-                    message += `\nAccount Name: ${transactionDetails.accountName}\n` +
-                               `Account Number: ${transactionDetails.accountNumber}\n`;
+//                 if (transactionDetails) {
+//                     message += `\nAccount Name: ${transactionDetails.accountName}\n` +
+//                                `Account Number: ${transactionDetails.accountNumber}\n`;
                     
-                    // Update stored transaction status
-                    transactionDetails.status = validationResult.status;
-                }
+//                     // Update stored transaction status
+//                     transactionDetails.status = validationResult.status;
+//                 }
                 
-                await ctx.reply(message);
-            } else {
-                await ctx.reply(`Transaction check failed: ${validationResult.error}`);
-            }
-        } catch (error) {
-            logger.error('Transaction validation error', { error: error.message, hash: hash, chain: chain });
-            await ctx.reply('Error validating transaction. Please try again or contact support.');
-        }
-    } else {
-        await ctx.reply('Sorry, I did not understand that. Please use the menu options or enter a valid transaction hash or URL.');
-    }
-    await generateMainMenu(ctx);
-});
+//                 await ctx.reply(message);
+//             } else {
+//                 await ctx.reply(`Transaction check failed: ${validationResult.error}`);
+//             }
+//         } catch (error) {
+//             logger.error('Transaction validation error', { error: error.message, hash: hash, chain: chain });
+//             await ctx.reply('Error validating transaction. Please try again or contact support.');
+//         }
+//     } else {
+//         await ctx.reply('Sorry, I did not understand that. Please use the menu options or enter a valid transaction hash or URL.');
+//     }
+//     await generateMainMenu(ctx);
+// });
 
 // Action handlers for menus
 bot.action('main_menu', async (ctx) => {
