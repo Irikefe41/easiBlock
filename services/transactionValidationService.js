@@ -3,7 +3,7 @@ const { Connection, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 const { TOKEN_PROGRAM_ID } = require('@solana/spl-token');
 const TronWeb = require('tronweb');
 const axios = require('axios');
-const logger = require('./logger');
+const logger = require('../utils/logger');
 
 require('dotenv').config()
 
@@ -18,27 +18,27 @@ class TransactionValidationService {
     this.ERC20_TRANSFER_EVENT = 'Transfer(address,address,uint256)';
   }
 
-  extractTransactionHash (input){
-    // Trim the input and convert to lowercase for easier processing
-    const cleanInput = input.trim().toLowerCase();
+  extractTransactionHash(input) {
+    // Trim the input but do not convert to lowercase
+    const cleanInput = input.trim();
   
     // Regular expressions for different blockchain explorer URLs and hash formats
     const patterns = {
       ethereum: {
-        url: /(?:https?:\/\/(?:www\.)?etherscan\.io\/tx\/)(0x[a-fA-F0-9]{64})/,
-        hash: /^0x[a-fA-F0-9]{64}$/
+        url: /(?:https?:\/\/(?:www\.)?etherscan\.io\/tx\/)(0x[a-fA-F0-9]{64})/i,
+        hash: /^0x[a-fA-F0-9]{64}$/i
       },
       bsc: {
-        url: /(?:https?:\/\/(?:www\.)?bscscan\.com\/tx\/)(0x[a-fA-F0-9]{64})/,
-        hash: /^0x[a-fA-F0-9]{64}$/
+        url: /(?:https?:\/\/(?:www\.)?bscscan\.com\/tx\/)(0x[a-fA-F0-9]{64})/i,
+        hash: /^0x[a-fA-F0-9]{64}$/i
       },
       solana: {
         url: /(?:https?:\/\/(?:www\.)?solscan\.io\/tx\/)([1-9A-HJ-NP-Za-km-z]{88,98})/,
         hash: /^[1-9A-HJ-NP-Za-km-z]{88,98}$/
       },
       tron: {
-        url: /(?:https?:\/\/(?:www\.)?tronscan\.org\/#\/transaction\/)([a-fA-F0-9]{64})/,
-        hash: /^[a-fA-F0-9]{64}$/
+        url: /(?:https?:\/\/(?:www\.)?tronscan\.org\/#\/transaction\/)([a-fA-F0-9]{64})/i,
+        hash: /^[a-fA-F0-9]{64}$/i
       }
     };
   
@@ -57,7 +57,7 @@ class TransactionValidationService {
   
     // If no match is found, return null
     return null;
-  };
+  }
   
   // Function to provide guidance on transaction hashes
    getTransactionHashGuidance () {
@@ -101,6 +101,9 @@ class TransactionValidationService {
       return { isValid: false, error: 'Transaction not found' };
     }
     const receipt = await provider.getTransactionReceipt(hash);
+
+    logger.info(`${chain} transaction: ${JSON.stringify(tx)}`)
+    
     const status = receipt ? (receipt.status === 1 ? 'Confirmed' : 'Failed') : 'Pending';
 
     let transferDetails;
@@ -143,7 +146,7 @@ class TransactionValidationService {
       status, 
       chain,
       ...transferDetails,
-      error: isCorrectRecipient ? null : 'Transaction recipient does not match expected address'
+      error: isCorrectRecipient ? null : 'Transaction was not sent to provided address'
     };
   }
 
@@ -208,7 +211,7 @@ class TransactionValidationService {
         status,
         chain: 'solana',
         ...transferDetails,
-        error: isCorrectRecipient ? null : 'Transaction recipient does not match expected address'
+        error: isCorrectRecipient ? null : 'Transaction was not sent to provided address'
       };
     } catch (error) {
       logger.error(`Error in validateSolanaTransaction: ${error.message}`, { stack: error.stack });
@@ -221,6 +224,8 @@ class TransactionValidationService {
     if (!tx) {
       return { isValid: false, error: 'Transaction not found' };
     }
+    logger.info(`Tron transaction: ${JSON.stringify(tx)}`);
+
     const status = tx.ret[0].contractRet === 'SUCCESS' ? 'Confirmed' : 'Failed';
 
     let transferDetails;
@@ -261,7 +266,7 @@ class TransactionValidationService {
       status, 
       chain: 'tron',
       ...transferDetails,
-      error: isCorrectRecipient ? null : 'Transaction recipient does not match expected address'
+      error: isCorrectRecipient ? null : 'Transaction was not sent to provided address'
     };
   }
 }

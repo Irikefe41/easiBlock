@@ -1,0 +1,12 @@
+2024-09-10 11:58:32 [error] : Solana transaction not found: 4qtcbgcq6aes8h4mxrg9wc9rchw9vzxnmu6jtu8csvvcd1xtjkumoy8vdvqtm36r4g7omyhw3us7uite5cfdsamf{"metadata":{}}
+2024-09-10 12:08:55 [error] : No transfer found in Solana transaction: 4qtcBGcQ6AEs8H4MxrG9Wc9rchw9VZXnMU6jTu8cSVVcD1XtjkUmoY8VDVQtm36r4G7omYhW3us7Uite5CfdSAmf{"metadata":{}}
+2024-09-10 12:21:37 [error] : Bot error{"metadata":{"error":"Cannot read properties of undefined (reading 'hide')","userId":1603748008,"chatId":1603748008}}
+2024-09-10 12:22:01 [error] : Bot error{"metadata":{"error":"400: Bad Request: field \"inline_keyboard\" of the InlineKeyboardMarkup must be an Array of Arrays","userId":1603748008,"chatId":1603748008}}
+2024-09-10 12:22:27 [error] : Bot error{"metadata":{"error":"Cannot read properties of undefined (reading 'hide')","userId":1603748008,"chatId":1603748008}}
+2024-09-10 12:22:31 [error] : Error generating main menu{"metadata":{"error":"Cannot read properties of undefined (reading 'hide')","userId":1603748008}}
+2024-09-10 14:40:39 [error] : Bank verification error{"metadata":{"error":"Invalid account details","userId":1603748008}}
+2024-09-10 14:40:46 [error] : Bank verification error{"metadata":{"error":"Invalid account details","userId":1603748008}}
+2024-09-10 15:03:07 [error] : Bot error{"metadata":{"error":"generateMainMenu is not defined","userId":1603748008,"chatId":1603748008}}
+2024-09-10 15:07:47 [error] : Bot error{"metadata":{"error":"generateMainMenu is not defined","userId":1603748008,"chatId":1603748008}}
+2024-09-10 15:42:22 [error] : Error validating transaction:{"metadata":{"code":"ECONNREFUSED","stack":"AggregateError\n    at internalConnectMultiple (node:net:1114:18)\n    at afterConnectMultiple (node:net:1667:5)"}}
+2024-09-10 15:44:31 [error] : Error validating transaction:{"metadata":{"code":"ECONNREFUSED","stack":"AggregateError\n    at internalConnectMultiple (node:net:1114:18)\n    at afterConnectMultiple (node:net:1667:5)"}}
