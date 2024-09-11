@@ -1,8 +1,11 @@
 const { Scenes, Markup } = require('telegraf');
+const BankVerificationService = require('../services/bankVerificationService');
 const UnifiedWalletService = require('../services/unifiedWalletService');
 const TransactionValidationService = require('../services/transactionValidationService');
 const logger = require('../utils/logger');
 const generateMainMenu = require('./messages/generateMainMenu');
+
+const MAX_RETRIES = 3;
 
 const sendCryptoScene = new Scenes.WizardScene(
     'SEND_CRYPTO',
@@ -48,7 +51,8 @@ const sendCryptoScene = new Scenes.WizardScene(
                 `Great! Please send your ${chain.toUpperCase()} tokens to this address:\n` +
                 `\`${address}\`\n\n` +
                 `Memo (important):\n\`${memo}\`\n\n` +
-                `*⚠️ IMPORTANT: After sending, please enter the LINK of transaction hash.*`,
+                `*⚠️ IMPORTANT: After sending, please enter the transaction hash.*\n` +
+                'Or type /cancel to exit.',
                 copyAddressMarkup
             );
             return ctx.wizard.next();
@@ -58,10 +62,30 @@ const sendCryptoScene = new Scenes.WizardScene(
             return ctx.scene.leave();
         }
     },
-    // Step 3: Handle transaction hash input
+    // Step 3: Handle transaction hash input and validation
     async (ctx) => {
+        if (!ctx.scene.state.retries) {
+            ctx.scene.state.retries = 0;
+        }
+
+        if (ctx.message && ctx.message.text === '/cancel') {
+            await ctx.reply('Operation cancelled.', Markup.removeKeyboard());
+            await generateMainMenu(ctx);
+            return ctx.scene.leave();
+        }
+
         if (!ctx.message || !ctx.message.text) {
-            await ctx.reply('Please enter a valid transaction hash.');
+            ctx.scene.state.retries++;
+            if (ctx.scene.state.retries >= MAX_RETRIES) {
+                await ctx.reply('Too many invalid attempts. Exiting...', Markup.removeKeyboard());
+                await generateMainMenu(ctx);
+                return ctx.scene.leave();
+            }
+            await ctx.reply(
+                `Please enter a valid transaction hash. Retry ${ctx.scene.state.retries}/${MAX_RETRIES}.\n` +
+                'Or type /cancel to exit.',
+                Markup.keyboard(['/cancel']).oneTime().resize()
+            );
             return;
         }
         
@@ -69,28 +93,61 @@ const sendCryptoScene = new Scenes.WizardScene(
         const extractedData = TransactionValidationService.extractTransactionHash(txHash);
 
         if (!extractedData) {
-            await ctx.reply('Unable to extract a valid transaction hash. Here\'s some guidance on transaction hashes:');
-            await ctx.reply(TransactionValidationService.getTransactionHashGuidance());
-            await ctx.reply('Please try again with a valid transaction hash or URL.');
+            ctx.scene.state.retries++;
+            if (ctx.scene.state.retries >= MAX_RETRIES) {
+                await ctx.reply('Too many invalid attempts. Exiting...', Markup.removeKeyboard());
+                await generateMainMenu(ctx);
+                return ctx.scene.leave();
+            }
+            await ctx.reply(
+                'Unable to extract a valid transaction hash. Here\'s some guidance on transaction hashes:\n\n' +
+                TransactionValidationService.getTransactionHashGuidance() +
+                `\n\nPlease try again. Retry ${ctx.scene.state.retries}/${MAX_RETRIES}.\n` +
+                'Or type /cancel to exit.',
+                Markup.keyboard(['/cancel']).oneTime().resize()
+            );
             return;
         }
 
         const { hash, chain } = extractedData;
 
-        // if (chain !== ctx.session.chain) {
-        //     await ctx.reply(`The provided transaction hash is for ${chain}, but you selected ${ctx.session.chain}. Please provide a transaction hash for ${ctx.session.chain}.`);
-        //     return;
-        // }
+        if (chain !== ctx.session.chain) {
+            ctx.scene.state.retries++;
+            if (ctx.scene.state.retries >= MAX_RETRIES) {
+                await ctx.reply('Too many invalid attempts. Exiting...', Markup.removeKeyboard());
+                await generateMainMenu(ctx);
+                return ctx.scene.leave();
+            }
+            await ctx.reply(
+                `The provided transaction hash is for ${chain}, but you selected ${ctx.session.chain}. ` +
+                `Please provide a transaction hash for ${ctx.session.chain}.\n\n` +
+                `Retry ${ctx.scene.state.retries}/${MAX_RETRIES}.\n` +
+                'Or type /cancel to exit.',
+                Markup.keyboard(['/cancel']).oneTime().resize()
+            );
+            return;
+        }
 
         try {
-            const validationResult = await TransactionValidationService.validateTransaction(hash, ctx.session.chain, ctx.session.depositAddress);
+            const validationResult = await TransactionValidationService.validateTransaction(hash, chain, ctx.session.depositAddress);
 
             if (!validationResult.isValid) {
-                await ctx.reply(`Transaction validation failed: ${validationResult.error}`);
+                ctx.scene.state.retries++;
+                if (ctx.scene.state.retries >= MAX_RETRIES) {
+                    await ctx.reply('Too many invalid attempts. Exiting...', Markup.removeKeyboard());
+                    await generateMainMenu(ctx);
+                    return ctx.scene.leave();
+                }
+                await ctx.reply(
+                    `Transaction validation failed: ${validationResult.error}\n\n` +
+                    `Please try again with a valid transaction hash. Retry ${ctx.scene.state.retries}/${MAX_RETRIES}.\n` +
+                    'Or type /cancel to exit.',
+                    Markup.keyboard(['/cancel']).oneTime().resize()
+                );
                 return;
             }
 
-            // Store transaction details
+            // Transaction is valid, proceed with storing details and finishing the process
             if (!ctx.session.transactions) {
                 ctx.session.transactions = {};
             }
@@ -106,7 +163,6 @@ const sendCryptoScene = new Scenes.WizardScene(
                 timestamp: Date.now()
             };
 
-            // Prepare response message
             let responseMessage = `Thank you, ${ctx.session.bankAccount.accountName}. We have received your transaction:\n\n`;
             responseMessage += `Type: ${validationResult.type === 'native' ? 'Native token' : 'Token'} transfer\n`;
             responseMessage += `Amount: ${validationResult.amount} ${validationResult.type === 'native' ? validationResult.chain.toUpperCase() : 'tokens'}\n`;
@@ -120,9 +176,8 @@ const sendCryptoScene = new Scenes.WizardScene(
 
             responseMessage += `\nCurrent status: ${validationResult.status}. You will receive a confirmation in your bank account (${ctx.session.bankAccount.accountNumber}) once the transaction is fully processed.`;
 
-            await ctx.reply(responseMessage);
+            await ctx.reply(responseMessage, Markup.removeKeyboard());
 
-            // Log transaction details
             logger.info('Transaction details stored', { 
                 userId: ctx.from.id, 
                 hash: hash, 
@@ -138,12 +193,19 @@ const sendCryptoScene = new Scenes.WizardScene(
                 error: error.message,
                 stack: error.stack
             });
-            await ctx.reply('An unexpected error occurred while processing your transaction. Our team has been notified. Please try again later or contact support.');
+            await ctx.reply('An unexpected error occurred while processing your transaction. Our team has been notified. Please try again later or contact support.', Markup.removeKeyboard());
             await generateMainMenu(ctx);
             return ctx.scene.leave();
         }
     }
 );
+
+// Add this command handler to the scene
+sendCryptoScene.command('cancel', async (ctx) => {
+    await ctx.reply('Operation cancelled.', Markup.removeKeyboard());
+    await generateMainMenu(ctx);
+    return ctx.scene.leave();
+});
 
 // Handler for the copy address button
 sendCryptoScene.action(/^copy_(.+)$/, async (ctx) => {

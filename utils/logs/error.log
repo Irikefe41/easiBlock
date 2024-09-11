@@ -10,3 +10,4 @@
 2024-09-10 15:07:47 [error] : Bot error{"metadata":{"error":"generateMainMenu is not defined","userId":1603748008,"chatId":1603748008}}
 2024-09-10 15:42:22 [error] : Error validating transaction:{"metadata":{"code":"ECONNREFUSED","stack":"AggregateError\n    at internalConnectMultiple (node:net:1114:18)\n    at afterConnectMultiple (node:net:1667:5)"}}
 2024-09-10 15:44:31 [error] : Error validating transaction:{"metadata":{"code":"ECONNREFUSED","stack":"AggregateError\n    at internalConnectMultiple (node:net:1114:18)\n    at afterConnectMultiple (node:net:1667:5)"}}
+2024-09-11 01:00:24 [error] : Bank verification error{"metadata":{"error":"Invalid account details","userId":1603748008}}
